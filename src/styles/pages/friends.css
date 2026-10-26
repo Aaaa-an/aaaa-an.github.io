@@ -1,0 +1,203 @@
+/* 友链页专属：友链卡片网格 */
+
+.friends-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+	gap: 0.75rem;
+}
+
+.friends-notice {
+	display: flex;
+	gap: 0.75rem;
+	align-items: flex-start;
+	padding: 0.9rem 1rem;
+	margin-bottom: 1.25rem;
+	border: 1px solid color-mix(in srgb, var(--primary) 30%, transparent);
+	border-radius: 0.9rem;
+	background: color-mix(in srgb, var(--primary) 8%, var(--card-bg));
+}
+
+.friends-notice svg {
+	font-size: 1.35rem;
+	color: var(--primary);
+	flex: none;
+}
+
+.friends-notice p {
+	margin: 0.2rem 0 0;
+	font-size: 0.875rem;
+}
+
+.friends-notice-warning {
+	border-color: color-mix(in srgb, #f59e0b 40%, transparent);
+	background: color-mix(in srgb, #f59e0b 9%, var(--card-bg));
+}
+
+.friends-form-grid {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 1rem;
+}
+
+.friends-form-grid label:not(.friends-checkbox) {
+	display: flex;
+	flex-direction: column;
+	gap: 0.4rem;
+}
+
+.friends-form-grid label > span {
+	font-size: 0.875rem;
+	font-weight: 600;
+}
+
+.friends-form-grid em {
+	color: #ef4444;
+	font-style: normal;
+}
+
+.friends-form-grid input:not([type="checkbox"]),
+.friends-form-grid textarea {
+	width: 100%;
+	padding: 0.7rem 0.8rem;
+	border: 1px solid var(--line-divider);
+	border-radius: 0.75rem;
+	background: color-mix(in srgb, var(--card-bg) 84%, transparent);
+	outline: none;
+	transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.friends-form-grid input:focus,
+.friends-form-grid textarea:focus {
+	border-color: var(--primary);
+	box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 16%, transparent);
+}
+
+.friends-form-wide {
+	grid-column: 1 / -1;
+}
+
+.friends-checkbox {
+	display: flex;
+	align-items: center;
+	gap: 0.6rem;
+	align-self: end;
+	min-height: 2.8rem;
+}
+
+.friends-primary-action {
+	color: white;
+	background: var(--primary);
+}
+
+.friends-primary-action:disabled,
+[aria-disabled="true"] {
+	opacity: 0.5;
+	pointer-events: none;
+}
+
+.friends-form-status {
+	margin-top: 1rem;
+	padding: 0.75rem 0.9rem;
+	border-radius: 0.75rem;
+	background: color-mix(in srgb, #ef4444 10%, var(--card-bg));
+	color: color-mix(in srgb, #ef4444 78%, currentColor);
+	font-size: 0.875rem;
+}
+
+.friends-form-status.is-success {
+	background: color-mix(in srgb, #22c55e 10%, var(--card-bg));
+	color: color-mix(in srgb, #16a34a 78%, currentColor);
+}
+
+.friends-manager-toolbar {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.6rem;
+}
+
+.friends-manager-empty {
+	padding: 2.5rem 1rem;
+	text-align: center;
+	color: #94a3b8;
+}
+
+.friends-manager-list {
+	display: grid;
+	gap: 0.75rem;
+	margin-top: 1rem;
+}
+
+.friends-manager-card {
+	display: grid;
+	grid-template-columns: 4rem minmax(0, 1fr) auto;
+	gap: 0.9rem;
+	align-items: center;
+	padding: 0.75rem;
+	border: 1px solid var(--line-divider);
+	border-radius: 1rem;
+	background: color-mix(in srgb, var(--card-bg) 86%, transparent);
+}
+
+.friends-manager-card > img {
+	width: 4rem;
+	height: 4rem;
+	border-radius: 0.85rem;
+	object-fit: cover;
+}
+
+.friends-manager-card-body {
+	display: flex;
+	min-width: 0;
+	flex-direction: column;
+	gap: 0.2rem;
+}
+
+.friends-manager-card-body span,
+.friends-manager-card-body small {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	color: #94a3b8;
+}
+
+.friends-manager-card-actions {
+	display: flex;
+	flex-wrap: wrap;
+	justify-content: flex-end;
+	gap: 0.35rem;
+}
+
+.friends-manager-card-actions button {
+	padding: 0.4rem 0.65rem;
+	border-radius: 0.6rem;
+	font-size: 0.75rem;
+}
+
+.friends-danger-action {
+	background: color-mix(in srgb, #ef4444 12%, transparent);
+	color: #ef4444;
+}
+
+@media (max-width: 640px) {
+	.friends-form-grid {
+		grid-template-columns: 1fr;
+	}
+
+	.friends-form-wide {
+		grid-column: auto;
+	}
+
+	.friends-manager-card {
+		grid-template-columns: 3.5rem minmax(0, 1fr);
+	}
+
+	.friends-manager-card > img {
+		width: 3.5rem;
+		height: 3.5rem;
+	}
+
+	.friends-manager-card-actions {
+		grid-column: 1 / -1;
+		justify-content: flex-start;
+	}
+}

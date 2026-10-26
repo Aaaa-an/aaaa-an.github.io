@@ -1,0 +1,12 @@
+---
+title: "友情链接"
+description: "友链信息与添加说明"
+---
+
+## 当前状态
+
+目前尚未添加真实友链，也没有虚构任何站点信息。友链数据保存在 `src/data/friends.json`，不再需要手工修改 TypeScript 数组。
+
+访客可以点击页面上方的“申请友链”，在站内完成预检后前往 GitHub Issue Form 确认提交。Issue 创建后还需要通过格式校验、管理员审核和 Pull Request 合并，才会显示在此页面。
+
+管理员可以点击“管理友链”进行添加、编辑、启停、排序、删除、导入与导出。浏览器不会保存 GitHub Token；真正的写入由 GitHub 身份和仓库权限校验后的 Actions 创建 Pull Request 完成。

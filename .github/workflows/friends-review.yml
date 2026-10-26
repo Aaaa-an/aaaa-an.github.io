@@ -1,0 +1,161 @@
+name: Review friend application
+
+on:
+  issues:
+    types: [labeled]
+
+concurrency:
+  group: friends-issue-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  reject:
+    if: >-
+      startsWith(github.event.issue.title, '[友链申请]') &&
+      github.event.label.name == 'friends:rejected'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Verify reviewer identity, permission and state
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          ACTOR: ${{ github.actor }}
+          EXPECTED_ADMIN: Aaaa-an
+        shell: bash
+        run: |
+          test "$ACTOR" = "$EXPECTED_ADMIN"
+          permission="$(gh api "repos/$GH_REPO/collaborators/$ACTOR/permission" --jq '.permission')"
+          case "$permission" in admin|maintain|write) ;; *) echo "Insufficient permission: $permission"; exit 1;; esac
+          issue_file="$RUNNER_TEMP/friends-issue.json"
+          gh api "repos/$GH_REPO/issues/$ISSUE_NUMBER" > "$issue_file"
+          jq -e '.state == "open" and ([.labels[].name] | index("friends:rejected") != null) and ([.labels[].name] | index("friends:approved") == null) and ([.labels[].name] | index("friends:pr-created") == null)' "$issue_file" > /dev/null
+
+      - name: Reject application
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        shell: bash
+        run: |
+          if gh issue view "$ISSUE_NUMBER" --json labels --jq '.labels[].name' | grep -Fxq 'friends:pending'; then
+            gh issue edit "$ISSUE_NUMBER" --remove-label 'friends:pending'
+          fi
+          gh issue comment "$ISSUE_NUMBER" --body '## 友链申请未通过
+
+          管理员已拒绝本次申请。该状态来自 GitHub 身份与仓库权限校验后的审核操作。'
+          gh issue close "$ISSUE_NUMBER" --reason 'not planned'
+
+  approve:
+    if: >-
+      startsWith(github.event.issue.title, '[友链申请]') &&
+      github.event.label.name == 'friends:approved'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+    steps:
+      - name: Verify reviewer identity, permission and live state
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          ACTOR: ${{ github.actor }}
+          EXPECTED_ADMIN: Aaaa-an
+        shell: bash
+        run: |
+          test "$ACTOR" = "$EXPECTED_ADMIN"
+          permission="$(gh api "repos/$GH_REPO/collaborators/$ACTOR/permission" --jq '.permission')"
+          case "$permission" in admin|maintain|write) ;; *) echo "Insufficient permission: $permission"; exit 1;; esac
+          issue_file="$RUNNER_TEMP/friends-issue.json"
+          gh api "repos/$GH_REPO/issues/$ISSUE_NUMBER" > "$issue_file"
+          jq -e '.state == "open" and ([.labels[].name] | index("friends:pending") != null) and ([.labels[].name] | index("friends:approved") != null) and ([.labels[].name] | index("friends:invalid") == null) and ([.labels[].name] | index("friends:rejected") == null) and ([.labels[].name] | index("friends:pr-created") == null)' "$issue_file" > /dev/null
+          jq -r '.body // ""' "$issue_file" > "$RUNNER_TEMP/friends-issue-body.md"
+
+      - name: Checkout trusted default branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          version: 11.22.0
+          run_install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install trusted dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Revalidate current Issue body and calculate snapshot
+        id: snapshot
+        env:
+          FRIENDS_ISSUE_BODY_PATH: ${{ runner.temp }}/friends-issue-body.md
+        run: pnpm friends:issue -- validate-application
+
+      - name: Verify the exact reviewed snapshot
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          VALID: ${{ steps.snapshot.outputs.valid }}
+          SNAPSHOT: ${{ steps.snapshot.outputs.snapshot }}
+        shell: bash
+        run: |
+          test "$VALID" = 'true'
+          test -n "$SNAPSHOT"
+          comments_file="$RUNNER_TEMP/friends-comments.json"
+          gh api --paginate --slurp "repos/$GH_REPO/issues/$ISSUE_NUMBER/comments" > "$comments_file"
+          marker="<!-- friends-validation-snapshot:$SNAPSHOT -->"
+          jq -e --arg marker "$marker" 'any(flatten[]; .user.login == "github-actions[bot]" and (.body | contains($marker)))' "$comments_file" > /dev/null
+
+      - name: Convert reviewed snapshot to friend data
+        id: approve
+        env:
+          FRIENDS_ISSUE_BODY_PATH: ${{ runner.temp }}/friends-issue-body.md
+        run: pnpm friends:issue -- approve-application
+
+      - name: Create or update friend data Pull Request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          SNAPSHOT: ${{ steps.approve.outputs.snapshot }}
+        shell: bash
+        run: |
+          branch="friends/application-$ISSUE_NUMBER"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git switch -c "$branch"
+          git add src/data/friends.json
+          if git diff --cached --quiet; then
+            gh issue comment "$ISSUE_NUMBER" --body '友链数据已经包含此申请，没有创建重复 Pull Request。'
+            exit 0
+          fi
+          git commit -m "feat: approve friend application #$ISSUE_NUMBER"
+          remote_sha="$(git ls-remote --heads origin "$branch" | cut -f1)"
+          if [ -n "$remote_sha" ]; then
+            git push --force-with-lease="refs/heads/$branch:$remote_sha" origin "HEAD:$branch"
+          else
+            git push origin "HEAD:$branch"
+          fi
+          pr_url="$(gh pr list --head "$branch" --state open --json url --jq '.[0].url // empty')"
+          if [ -z "$pr_url" ]; then
+            pr_url="$(gh pr create --base "$DEFAULT_BRANCH" --head "$branch" --title "feat: approve friend application #$ISSUE_NUMBER" --body "Closes #$ISSUE_NUMBER
+
+          Reviewed application snapshot: \`$SNAPSHOT\`")"
+          fi
+          gh issue edit "$ISSUE_NUMBER" --remove-label 'friends:pending' --remove-label 'friends:approved' --add-label 'friends:pr-created'
+          gh issue comment "$ISSUE_NUMBER" --body "已创建数据 Pull Request：$pr_url。只有管理员检查并合并 PR 后友链才会公开。"

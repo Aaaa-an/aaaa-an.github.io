@@ -1,0 +1,31 @@
+name: 管理友链（仅管理员）
+description: 由仓库管理员提交经过站内管理器生成的友链操作
+title: "[友链管理] "
+labels: ["friends:admin"]
+assignees: ["Aaaa-an"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        此入口只接受 GitHub 用户 `Aaaa-an` 且具有仓库写入权限的操作。自动化会再次验证 GitHub 事件身份和仓库权限，然后创建数据 Pull Request。
+        推荐从网站 `/friends/manage/` 生成并预填操作数据。
+  - type: textarea
+    id: operation-payload
+    attributes:
+      label: 操作数据（JSON）
+      description: 支持 add、update、delete、set-enabled、reorder、replace。内容会经过统一校验，不会作为 Shell 命令执行。
+      render: json
+    validations:
+      required: true
+  - type: textarea
+    id: note
+    attributes:
+      label: 变更说明
+      description: 可选；说明本次添加、修改、删除或排序的原因。
+  - type: checkboxes
+    id: confirmation
+    attributes:
+      label: 管理员确认
+      options:
+        - label: 我确认需要由自动化创建 PR，并在合并前再次检查变更。
+          required: true

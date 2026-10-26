@@ -1,0 +1,55 @@
+name: 申请友链
+description: 通过结构化表单申请加入 A's Blog 友链
+title: "[友链申请] "
+labels: ["friends:pending"]
+assignees: ["Aaaa-an"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢申请友链。提交 Issue 后，仓库自动化会先做格式校验；校验通过不代表已经公开，仍需管理员审核并合并 Pull Request。
+        请勿填写密码、Token、Cookie 或其他敏感信息。
+  - type: input
+    id: site-name
+    attributes:
+      label: 网站名称
+      placeholder: 例如：A's Blog
+    validations:
+      required: true
+  - type: input
+    id: site-url
+    attributes:
+      label: 网站 URL
+      description: 仅接受公开可访问的 http/https 地址，不接受本机或私网地址。
+      placeholder: https://example.com/
+    validations:
+      required: true
+  - type: input
+    id: logo-url
+    attributes:
+      label: 网站头像 / Logo URL
+      description: 请使用公开的 http/https 图片地址；留空时使用默认图标。
+      placeholder: https://example.com/logo.png
+  - type: textarea
+    id: site-description
+    attributes:
+      label: 网站简介
+      description: 最多 200 字，不支持 HTML。
+  - type: input
+    id: site-tags
+    attributes:
+      label: 网站分类或标签
+      description: 使用逗号分隔，最多 8 个。
+      placeholder: Blog, 技术
+  - type: textarea
+    id: application-reason
+    attributes:
+      label: 申请说明
+      description: 可选；说明希望交换友链的原因或其他信息。
+  - type: checkboxes
+    id: confirmation
+    attributes:
+      label: 提交确认
+      options:
+        - label: 我确认以上信息可以公开显示，并理解提交 Issue 不代表审核通过。
+          required: true

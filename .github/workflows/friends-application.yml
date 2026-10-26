@@ -1,0 +1,81 @@
+name: Validate friend application
+
+on:
+  issues:
+    types: [opened, edited]
+
+concurrency:
+  group: friends-issue-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  validate:
+    if: >-
+      startsWith(github.event.issue.title, '[友链申请]') &&
+      !contains(github.event.issue.labels.*.name, 'friends:approved') &&
+      !contains(github.event.issue.labels.*.name, 'friends:rejected') &&
+      !contains(github.event.issue.labels.*.name, 'friends:pr-created')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Checkout trusted default branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          version: 11.22.0
+          run_install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install trusted dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Parse and validate Issue Form
+        id: validate
+        run: pnpm friends:issue -- validate-application
+
+      - name: Publish validation status
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          VALID: ${{ steps.validate.outputs.valid }}
+          RESULT_MARKDOWN: ${{ steps.validate.outputs.result_markdown }}
+        shell: bash
+        run: |
+          gh label create 'friends:pending' --color 'FBCA04' --description '友链申请等待审核' --force
+          gh label create 'friends:invalid' --color 'D73A4A' --description '友链数据校验失败' --force
+          gh label create 'friends:approved' --color '0E8A16' --description '管理员批准友链申请' --force
+          gh label create 'friends:rejected' --color 'B60205' --description '管理员拒绝友链申请' --force
+          gh label create 'friends:pr-created' --color '1D76DB' --description '已经创建友链数据 PR' --force
+
+          if [ "$VALID" = 'true' ]; then
+            gh issue edit "$ISSUE_NUMBER" --remove-label 'friends:invalid' --add-label 'friends:pending' || \
+              gh issue edit "$ISSUE_NUMBER" --add-label 'friends:pending'
+          else
+            gh issue edit "$ISSUE_NUMBER" --remove-label 'friends:pending' --add-label 'friends:invalid' || \
+              gh issue edit "$ISSUE_NUMBER" --add-label 'friends:invalid'
+          fi
+
+          comments_file="$RUNNER_TEMP/friends-comments.json"
+          gh api --paginate --slurp "repos/$GH_REPO/issues/$ISSUE_NUMBER/comments" > "$comments_file"
+          comment_id="$(jq -r '[flatten | .[] | select(.user.login == "github-actions[bot]" and (.body | contains("<!-- friends-validation-snapshot:")))] | last | .id // empty' "$comments_file")"
+          if [ -n "$comment_id" ]; then
+            gh api --method PATCH "repos/$GH_REPO/issues/comments/$comment_id" -F "body=@$RESULT_MARKDOWN" > /dev/null
+          else
+            gh issue comment "$ISSUE_NUMBER" --body-file "$RESULT_MARKDOWN"
+          fi

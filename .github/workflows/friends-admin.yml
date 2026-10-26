@@ -1,0 +1,123 @@
+name: Apply administrator friend operation
+
+on:
+  issues:
+    types: [opened, edited]
+
+concurrency:
+  group: friends-issue-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  apply:
+    if: >-
+      startsWith(github.event.issue.title, '[友链管理]') &&
+      github.event.issue.user.login == 'Aaaa-an' &&
+      !contains(github.event.issue.labels.*.name, 'friends:pr-created')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+    steps:
+      - name: Verify GitHub identity and repository permission
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          ACTOR: ${{ github.actor }}
+          EXPECTED_ADMIN: Aaaa-an
+        shell: bash
+        run: |
+          test "$ACTOR" = "$EXPECTED_ADMIN"
+          permission="$(gh api "repos/$GH_REPO/collaborators/$ACTOR/permission" --jq '.permission')"
+          case "$permission" in admin|maintain|write) ;; *) echo "Insufficient permission: $permission"; exit 1;; esac
+          issue_file="$RUNNER_TEMP/friends-admin-issue.json"
+          gh api "repos/$GH_REPO/issues/$ISSUE_NUMBER" > "$issue_file"
+          jq -e '.state == "open" and .user.login == "Aaaa-an" and ([.labels[].name] | index("friends:pr-created") == null)' "$issue_file" > /dev/null
+          jq -r '.body // ""' "$issue_file" > "$RUNNER_TEMP/friends-admin-body.md"
+
+      - name: Checkout trusted default branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          version: 11.22.0
+          run_install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install trusted dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Validate and apply administrator operation
+        id: apply
+        env:
+          FRIENDS_ISSUE_BODY_PATH: ${{ runner.temp }}/friends-admin-body.md
+        run: pnpm friends:issue -- apply-admin
+
+      - name: Publish invalid operation status
+        if: steps.apply.outputs.valid != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          RESULT_MARKDOWN: ${{ steps.apply.outputs.result_markdown }}
+        shell: bash
+        run: |
+          gh label create 'friends:invalid' --color 'D73A4A' --description '友链数据校验失败' --force
+          gh issue edit "$ISSUE_NUMBER" --add-label 'friends:invalid'
+          comments_file="$RUNNER_TEMP/friends-comments.json"
+          gh api --paginate --slurp "repos/$GH_REPO/issues/$ISSUE_NUMBER/comments" > "$comments_file"
+          comment_id="$(jq -r '[flatten | .[] | select(.user.login == "github-actions[bot]" and (.body | contains("<!-- friends-admin-validation -->")))] | last | .id // empty' "$comments_file")"
+          if [ -n "$comment_id" ]; then
+            gh api --method PATCH "repos/$GH_REPO/issues/comments/$comment_id" -F "body=@$RESULT_MARKDOWN" > /dev/null
+          else
+            gh issue comment "$ISSUE_NUMBER" --body-file "$RESULT_MARKDOWN"
+          fi
+
+      - name: Create friend management Pull Request
+        if: steps.apply.outputs.valid == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        shell: bash
+        run: |
+          branch="friends/admin-$ISSUE_NUMBER"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git switch -c "$branch"
+          git add src/data/friends.json
+          if git diff --cached --quiet; then
+            gh issue comment "$ISSUE_NUMBER" --body '提交的数据与当前友链数据一致，没有创建空 Pull Request。'
+            exit 0
+          fi
+          git commit -m "chore: apply friend management request #$ISSUE_NUMBER"
+          remote_sha="$(git ls-remote --heads origin "$branch" | cut -f1)"
+          if [ -n "$remote_sha" ]; then
+            git push --force-with-lease="refs/heads/$branch:$remote_sha" origin "HEAD:$branch"
+          else
+            git push origin "HEAD:$branch"
+          fi
+          pr_url="$(gh pr list --head "$branch" --state open --json url --jq '.[0].url // empty')"
+          if [ -z "$pr_url" ]; then
+            pr_url="$(gh pr create --base "$DEFAULT_BRANCH" --head "$branch" --title "chore: update friend links #$ISSUE_NUMBER" --body "Closes #$ISSUE_NUMBER")"
+          fi
+          gh label create 'friends:pr-created' --color '1D76DB' --description '已经创建友链数据 PR' --force
+          if gh issue view "$ISSUE_NUMBER" --json labels --jq '.labels[].name' | grep -Fxq 'friends:invalid'; then
+            gh issue edit "$ISSUE_NUMBER" --remove-label 'friends:invalid'
+          fi
+          gh issue edit "$ISSUE_NUMBER" --add-label 'friends:pr-created'
+          gh issue comment "$ISSUE_NUMBER" --body "已创建友链管理 Pull Request：$pr_url。请检查差异并合并，随后现有 Pages 工作流会自动重建。"

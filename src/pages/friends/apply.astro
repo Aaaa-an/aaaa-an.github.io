@@ -1,0 +1,127 @@
+---
+import { Icon } from "astro-icon/components";
+import { friendsSystemConfig, siteConfig } from "@/config";
+import MainGridLayout from "@/layouts/MainGridLayout.astro";
+import "@/styles/pages/common.css";
+import "@/styles/pages/friends.css";
+
+if (!siteConfig.pages.friends) {
+	return Astro.redirect("/404/");
+}
+
+const repositoryConfigured = Boolean(friendsSystemConfig.repository);
+---
+
+<MainGridLayout title="申请友链" description="先在站内校验信息，再到 GitHub 确认并创建申请 Issue。">
+	<div class="card-base z-10 px-6 md:px-9 py-7 relative w-full friends-application-card">
+		<div class="page-heading mb-5">
+			<div class="page-icon" aria-hidden="true"><Icon name="material-symbols:person-add-rounded" /></div>
+			<div>
+				<h2>申请加入友链</h2>
+				<p>本站不会在 GitHub Issue 真正创建前声称提交成功，也不会收集 GitHub Token。</p>
+			</div>
+		</div>
+
+		{!repositoryConfigured && (
+			<div class="friends-notice friends-notice-warning" role="status">
+				<Icon name="material-symbols:warning-outline-rounded" />
+				<div>
+					<strong>GitHub 仓库尚未配置</strong>
+					<p>管理员需要先在 <code>src/config/friendsSystemConfig.ts</code> 填写 <code>owner/repository</code>。当前可以填写和本地校验，但不能创建真实申请。</p>
+				</div>
+			</div>
+		)}
+
+		<form id="friend-application-form" class="friends-form-grid" novalidate>
+			<label>
+				<span>网站名称 <em>*</em></span>
+				<input name="title" required maxlength="80" autocomplete="organization" placeholder="例如：A's Blog" />
+			</label>
+			<label>
+				<span>网站 URL <em>*</em></span>
+				<input name="siteurl" required type="url" inputmode="url" placeholder="https://example.com/" />
+			</label>
+			<label>
+				<span>网站头像 / Logo URL</span>
+				<input name="imgurl" type="url" inputmode="url" placeholder="https://example.com/logo.png" />
+			</label>
+			<label>
+				<span>网站分类或标签</span>
+				<input name="tags" maxlength="200" placeholder="Blog, 技术" />
+			</label>
+			<label class="friends-form-wide">
+				<span>网站简介</span>
+				<textarea name="description" maxlength="200" rows="3" placeholder="用不超过 200 字介绍网站"></textarea>
+			</label>
+			<label class="friends-form-wide">
+				<span>申请说明</span>
+				<textarea name="reason" maxlength="500" rows="3" placeholder="可选：说明申请原因或其他信息"></textarea>
+			</label>
+			<div class="friends-form-wide flex flex-wrap gap-3 items-center">
+				<button type="submit" class="btn-regular friends-primary-action rounded-xl px-5 py-2.5 inline-flex items-center gap-2 font-medium">
+					<Icon name="fa7-brands:github" />
+					在 GitHub 确认并创建 Issue
+				</button>
+				<a href="/friends/" class="btn-regular rounded-xl px-4 py-2.5">返回友链</a>
+			</div>
+		</form>
+		<div id="friend-application-status" class="friends-form-status hidden" role="status" aria-live="polite"></div>
+	</div>
+</MainGridLayout>
+
+<script>
+	import { friendsSystemConfig } from "@/config/friendsSystemConfig";
+	import { validateFriendsData } from "@/utils/friends-data";
+
+	const form = document.querySelector<HTMLFormElement>("#friend-application-form");
+	const status = document.querySelector<HTMLElement>("#friend-application-status");
+	form?.addEventListener("submit", (event) => {
+		event.preventDefault();
+		if (!status) return;
+		const values = new FormData(form);
+		const tags = String(values.get("tags") || "")
+			.split(/[,，]/)
+			.map((tag) => tag.trim())
+			.filter(Boolean);
+		const now = new Date().toISOString();
+		const candidate = {
+			version: 1 as const,
+			revision: 0,
+			friends: [{
+				id: "application-preview",
+				title: String(values.get("title") || "").trim(),
+				siteurl: String(values.get("siteurl") || "").trim(),
+				imgurl: String(values.get("imgurl") || "").trim(),
+				description: String(values.get("description") || "").trim(),
+				tags,
+				weight: 0,
+				enabled: true,
+				createdAt: now,
+				updatedAt: now,
+			}],
+		};
+		const validation = validateFriendsData(candidate);
+		status.classList.remove("hidden", "is-success");
+		if (!validation.valid) {
+			status.textContent = `请先修正：${validation.errors.map((item) => `${item.path}: ${item.message}`).join("；")}`;
+			return;
+		}
+		if (!friendsSystemConfig.repository) {
+			status.textContent = "GitHub 仓库尚未配置，因此没有创建 Issue。";
+			return;
+		}
+
+		const issueURL = new URL(`https://github.com/${friendsSystemConfig.repository}/issues/new`);
+		issueURL.searchParams.set("template", friendsSystemConfig.applicationTemplate);
+		issueURL.searchParams.set("title", `[友链申请] ${candidate.friends[0].title}`);
+		issueURL.searchParams.set("site-name", candidate.friends[0].title);
+		issueURL.searchParams.set("site-url", candidate.friends[0].siteurl);
+		issueURL.searchParams.set("logo-url", candidate.friends[0].imgurl);
+		issueURL.searchParams.set("site-description", candidate.friends[0].description);
+		issueURL.searchParams.set("site-tags", tags.join(", "));
+		issueURL.searchParams.set("application-reason", String(values.get("reason") || "").trim());
+		window.open(issueURL, "_blank", "noopener,noreferrer");
+		status.classList.add("is-success");
+		status.textContent = "GitHub 页面已打开。请在那里检查并点击提交；在此之前尚未创建申请 Issue。";
+	});
+</script>
