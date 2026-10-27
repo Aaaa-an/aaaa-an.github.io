@@ -40,7 +40,7 @@ await writeFile(
 			body: applicationBody,
 			user: { login: "visitor" },
 		},
-	repository: { full_name: "Aaaa-an/aaaa-an.github.io" },
+		repository: { full_name: "Aaaa-an/aaaa-an.github.io" },
 	}),
 );
 await writeFile(bodyPath, applicationBody);
